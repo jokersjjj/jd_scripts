@@ -77,7 +77,7 @@ let assistUserShareCode = 0; // 随机助力用户 share code
             $.index = i + 1;
             $.isLogin = true;
             $.nickName = '';
-            $.log(`\n************* 检查【京东账号${$.index}】${$.UserName} cookie 是否有效 *************`);
+            $.log(`检查【京东账号${$.index}】${$.UserName} cookie 是否有效`);
             await TotalBean();
             $.log(`开始【京东账号${$.index}】${$.nickName || $.UserName}\n`);
             if (!$.isLogin) {
@@ -90,10 +90,8 @@ let assistUserShareCode = 0; // 随机助力用户 share code
             subTitle = '';
             message = '';
             option = {};
-            $.answer = 0;
             $.helpNum = 0;
             $.helpSelfNum = 0;
-            notifyBool = notifyLevel > 0; // 初始化是否推送
             await tokenFormat(); // 处理当前账号 token
             await shareCodesFormat(); // 处理当前账号 助力码
             await jdJXNC(); // 执行当前账号 主代码流程
@@ -113,6 +111,7 @@ function requireConfig() {
     return new Promise(resolve => {
         $.log('开始获取配置文件\n')
         notify = $.isNode() ? require('./sendNotify') : '';
+        notifyBool = notifyLevel > 0; // 初始化是否推送
         //Node.js用户请在jdCookie.js处填写京东ck;
         const jdCookieNode = $.isNode() ? require('./jdCookie.js') : '';
         const jdTokenNode = $.isNode() ? require('./jdJxncTokens.js') : '';
@@ -311,11 +310,6 @@ function browserTask() {
                     break;
                 }
             }
-            if (status[0] === 1017) { // ret:1017 retmsg:"score full" 水滴已满，果实成熟，跳过所有任务
-                $.log('水滴已满，果实成熟，跳过所有任务');
-                resolve(true);
-                break;
-            }
             if (status[0] === 1032) {
                 $.log('任务执行失败，种植的 APP 专属种子，请提供 token 或种植非 APP 种子');
                 message += '任务执行失败，种植的 APP 专属种子，请提供 token 或种植非 APP 种子\n';
@@ -356,10 +350,6 @@ function answerTask() {
                     if (ret === 0 && right === 1) {
                         $.drip += eachtimeget;
                     }
-                    if (ret === 1017) { // ret:1017 retmsg:"score full" 水滴已满，果实成熟，跳过答题
-                        resolve();
-                        return;
-                    }
                     if (((ret !== 0 && ret !== 1029) || retmsg === 'ans err') && $.answer < 4) {
                         $.answer++;
                         await $.wait(1000);
@@ -377,7 +367,7 @@ function answerTask() {
 
 function getMessage(endInfo, startInfo) {
     const need = endInfo.target - endInfo.score;
-    const get = endInfo.modifyscore; // 本次变更获得水滴
+    const get = endInfo.modifyscore; // 本地变更获得水滴
     const leaveGet = startInfo.modifyscore; // 离开时获得水滴
     let dayGet = 0; // 今日共获取水滴数
     if ($.detail) {
@@ -389,13 +379,8 @@ function getMessage(endInfo, startInfo) {
         });
     }
     message += `【水滴】本次获得${get} 离线获得${leaveGet} 今日获得${dayGet} 还需水滴${need}\n`;
-    if (need <= 0) {
-        notifyBool = true;
-        message += `【成熟】水果已成熟请及时收取\n`;
-        return;
-    }
     if (get > 0 || leaveGet > 0 || dayGet > 0) {
-        const day = Math.ceil(need / (dayGet > 0 ? dayGet : (get + leaveGet)));
+        const day = parseInt(need / (dayGet > 0 ? dayGet : (get + leaveGet)));
         message += `【预测】还需 ${day} 天\n`;
     }
     if (get > 0 || leaveGet > 0) { // 本次 或 离线 有水滴
@@ -412,57 +397,44 @@ function submitInviteId(userName) {
             resolve();
             return;
         }
-        try {
-            $.post(
-                {
-                    url: `https://api.ninesix.cc/api/jx-nc/${$.info.smp}/${encodeURIComponent(userName)}?active=${$.info.active}`,
-                    timeout: 10000
-                },
-                (err, resp, _data) => {
-                    try {
-                        const {code, data = {}} = JSON.parse(_data);
-                        $.log(`邀请码提交：${code}`);
-                        if (data.value) {
-                            message += '【邀请码】提交成功！\n';
-                        }
-                    } catch (e) {
-                        // $.logErr(e, resp);
-                        $.log('邀请码提交失败 API 返回异常');
-                    } finally {
-                        resolve();
+        $.post(
+            {
+                url: `https://api.ninesix.cc/api/jx-nc/${$.info.smp}/${encodeURIComponent(userName)}?active=${$.info.active}`,
+            },
+            (err, resp, _data) => {
+                try {
+                    const {code, data = {}} = JSON.parse(_data);
+                    $.log(`邀请码提交：${code}`);
+                    if (data.value) {
+                        message += '【邀请码】提交成功！\n';
                     }
-                },
-            );
-        } catch (e) {
-            // $.logErr(e, resp);
-            resolve();
-        }
+                } catch (e) {
+                    $.logErr(e, resp);
+                } finally {
+                    resolve();
+                }
+            },
+        );
     });
 }
 
 function getAssistUser() {
     return new Promise(resolve => {
-        try {
-            $.get({url: `https://api.ninesix.cc/api/jx-nc?active=${$.info.active}`, timeout: 10000}, async (err, resp, _data) => {
-                try {
-                    const {code, data = {}} = JSON.parse(_data);
-                    if (data.value) {
-                        $.log(`获取随机助力码成功 ${code} ${data.value}`);
-                        resolve(data.value);
-                    } else {
-                        $.log(`获取随机助力码失败 ${code}`);
-                    }
-                } catch (e) {
-                    // $.logErr(e, resp);
-                    $.log('获取随机助力码失败 API 返回异常');
-                } finally {
-                    resolve(false);
+        $.get({url: `https://api.ninesix.cc/api/jx-nc?active=${$.info.active}`}, async (err, resp, _data) => {
+            try {
+                const {code, data = {}} = JSON.parse(_data);
+                if (data.value) {
+                    $.log(`获取随机助力码成功 ${code} ${data.value}`);
+                    resolve(data.value);
+                } else {
+                    $.log(`获取随机助力码失败 ${code}`);
                 }
-            });
-        } catch (e) {
-            // $.logErr(e, resp);
-            resolve(false);
-        }
+            } catch (e) {
+                $.logErr(e, resp);
+            } finally {
+                resolve(false);
+            }
+        });
     });
 }
 
@@ -565,7 +537,6 @@ function taskUrl(function_path, body) {
             Host: `wq.jd.com`,
             'Accept-Language': `zh-cn`,
         },
-        timeout: 10000,
     };
 }
 
@@ -575,8 +546,6 @@ async function showMsg() {
         if ($.isNode()) {
             await notify.sendNotify(`${$.name} - 账号${$.index} - ${$.nickName}`, `${subTitle}\n${message}`);
         }
-    } else {
-        $.log(`${$.name} - notify 通知已关闭\n账号${$.index} - ${$.nickName}\n${subTitle}\n${message}`);
     }
 }
 
